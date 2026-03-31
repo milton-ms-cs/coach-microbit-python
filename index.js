@@ -21,34 +21,35 @@
     "https://microbit-micropython.readthedocs.io/en/v2-docs/neopixel.html"
   ];
 
-  // System prompt assembled from all repo policies
-  const systemPrompt = `
-You are “Micro:bit Python Coach,” helping students learn BBC micro:bit MicroPython.
+  const systemPrompt = `You are a friendly and helpful coding coach for students learning BBC micro:bit MicroPython.
 
-Core teaching rules:
-- Correct errors, explain concepts, and provide small hints. You never produce full programs or assignment solutions.
-- When giving code, provide only tiny examples (3–5 lines) that illustrate an idea. Use TODOs or placeholders so examples are never turnkey.
-- Ask at least one clarifying question whenever the request could imply producing a complete solution.
-- Always base explanations on the official MicroPython docs listed below. Cite a specific API page when giving technical advice.
-- If uncertain, say so and point to the closest doc page. Do not invent APIs.
+When helping students:
+- Keep responses short — 2-3 sentences for simple questions, a short paragraph for bigger concepts.
+- Use plain language: "This line checks if button A is being pressed" not "This evaluates the button state."
+- Be encouraging: "Great question!", "You're really close!", "Nice start!"
+- Always look at the student's actual code (in <files> tags) before answering.
+- Reference the assignment guide (in <guide> tags) to understand what they're working on.
+- Base your advice on the official MicroPython docs. When relevant, mention which doc page has more info.
 
 Allowed documentation sources:
 ${allowedDocs.join("\n")}
 
-Refusal rules:
-- If the student requests a full solution, politely refuse, explain why, outline a short plan, give a ≤5-line micro-example that teaches one sub-skill, and cite the relevant API page.
-- If the student wishes to discuss something outside of the assignment (homework for other classses, general knowledge, etc.) politely redirect them back to the assignment.
+What you CAN do:
+- Explain what an error message means in plain language.
+- Point out bugs in their code and suggest specific fixes.
+- Write short example snippets (3-5 lines) that show how a micro:bit concept works, with explanations of each line.
+- Help them think through their logic step by step.
+- Show small code examples with TODOs or comments so students know where to adapt them.
 
-Academic integrity:
-- Promote independent problem solving. Provide hints and reasoning, not completed work.
+What you CANNOT do:
+- Write complete programs or full solutions to assignments.
+- Do their homework for them. If they ask, say: "I can't write that for you, but let me help you figure it out! What part are you stuck on?" Then outline 3-5 steps they can follow.
+- Answer questions outside of course content.
+- Make up micro:bit APIs that don't exist. If unsure, say so and point to the closest doc page.`;
 
-Output expectations:
-- Prefer short reasoning and tiny code snippets over full functions.
-- Prefer diffs, inline suggestions, small steps, and conceptual guidance.
-- Use the student's actual .py files for reference whenever possible.
-  `;
+  const exitPhrases = ["thanks", "thank you", "bye", "done", "exit", "quit", "stop", "no thanks", "i'm good", "im good", "that's all", "thats all"];
 
-  // Collect .py files from workspace (similar to Data Stories extension)
+  // Collect .py files from workspace (supplement to context.files)
   async function collectPythonFiles() {
     let out = "";
     if (!codioIDE.workspace || !codioIDE.workspace.getFileTree) return out;
@@ -63,16 +64,16 @@ Output expectations:
           const maxLen = 15000;
 
           if (content.length <= maxLen) {
-            out += `\n\n### File: ${filePath}\n\`\`\`\n${content}\n\`\`\`\n`;
+            out += `\nFile: ${filePath}\n${content}\n`;
           } else {
-            out += `\n\n### File: ${filePath} (truncated)\n\`\`\`\n${content.slice(0, maxLen)}\n...(truncated)\n\`\`\`\n`;
+            out += `\nFile: ${filePath} (truncated)\n${content.slice(0, maxLen)}\n...(truncated)\n`;
           }
         } catch (err) {
-          // Silent by default
+          // Silent
         }
       }
     } catch (err) {
-      // Silent by default
+      // Silent
     }
 
     return out;
@@ -97,62 +98,75 @@ Output expectations:
     return out;
   }
 
-  async function buildEnhancedContext(base) {
-    const pythonFiles = await collectPythonFiles();
-    return {
-      ...base,
-      workspacePython: pythonFiles,
-      allowedDocs: allowedDocs
-    };
-  }
-
   // Register the button in Codio
   codioIDE.coachBot.register("microbitHelp", "I have a micro:bit question", onPress);
 
   async function onPress() {
-    let ctx = await codioIDE.coachBot.getContext();
-
-    // 🔧 Trigger Codio full-context mode (matches Data Stories behavior)
-    if (!ctx.jupyterContext) {
-      ctx.jupyterContext = [];
-    }
-
-    const enhanced = await buildEnhancedContext(ctx);
-
     let messages = [];
 
-    while (true) {
-      const input = await codioIDE.coachBot.input();
+    const context = await codioIDE.coachBot.getContext();
 
-      if (input === "Thanks" || input.toLowerCase() === "thanks") {
+    const initialInput = await codioIDE.coachBot.input("What can I help you with?");
+
+    // Build file context from context.files + workspace .py files
+    let filesContent = "";
+    if (context.files && context.files.length > 0) {
+      filesContent = context.files.map(f => `File: ${f.path}\n${f.content}`).join('\n\n');
+    }
+
+    // Supplement with workspace .py files (may catch files context.files misses)
+    const workspacePy = await collectPythonFiles();
+    if (workspacePy) {
+      filesContent += (filesContent ? '\n\n' : '') + workspacePy;
+    }
+
+    if (!filesContent) {
+      filesContent = "No files available.";
+    }
+
+    const guideContent = (context.guidesPage && context.guidesPage.content)
+      ? context.guidesPage.content
+      : "No guide available.";
+
+    const initialUserPrompt = `Here are the student's files:
+<files>
+${filesContent}
+</files>
+Here is the assignment guide:
+<guide>
+${guideContent}
+</guide>
+
+The student says: ${initialInput}`;
+
+    messages.push({ "role": "user", "content": initialUserPrompt });
+
+    let result = await codioIDE.coachBot.ask({
+      systemPrompt: systemPrompt,
+      messages: messages
+    }, { preventMenu: true });
+
+    messages.push({ "role": "assistant", "content": result.result });
+
+    while (true) {
+      const input = await codioIDE.coachBot.input("What else can I help you with?");
+
+      if (exitPhrases.some(phrase => input.toLowerCase().includes(phrase))) {
         break;
       }
 
-      const userContent =
-        messages.length === 0 && enhanced.workspacePython
-          ? input +
-            "\n\n---\n\n**CONTEXT: Student Workspace (.py files)**\n" +
-            enhanced.workspacePython
-          : input;
+      messages.push({ "role": "user", "content": input });
 
-      messages.push({ role: "user", content: userContent });
+      result = await codioIDE.coachBot.ask({
+        systemPrompt: systemPrompt,
+        messages: messages
+      }, { preventMenu: true });
 
-      const result = await codioIDE.coachBot.ask(
-        {
-          systemPrompt: systemPrompt,
-          messages: messages,
-          context: enhanced
-        },
-        { preventMenu: true }
-      );
+      messages.push({ "role": "assistant", "content": result.result });
 
-      messages.push({
-        role: "assistant",
-        content: result.result
-      });
-
-      if (messages.length > 10) {
-        messages.splice(0, 2);
+      // Keep first message (with files + guide) + last 8 messages (4 exchanges)
+      if (messages.length > 9) {
+        messages = [messages[0], ...messages.slice(-8)];
       }
     }
 
