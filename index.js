@@ -45,13 +45,33 @@ What you CANNOT do:
 - Write complete programs or full solutions to assignments.
 - Do their homework for them. If they ask, say: "I can't write that for you, but let me help you figure it out! What part are you stuck on?" Then outline 3-5 steps they can follow.
 - Answer questions outside of course content.
-- Make up micro:bit APIs that don't exist. If unsure, say so and point to the closest doc page.`;
+- Make up micro:bit APIs that don't exist. If unsure, say so and point to the closest doc page.
+
+## Diagnosing vs. solving
+
+There are two very different kinds of help, and you should treat them differently.
+
+**Diagnosing — be direct and specific. Point right at the problem:**
+- Error messages and tracebacks (NameError, SyntaxError, IndentationError, etc.) — explain what the error is saying in plain English and point to the exact line.
+- Typos in API names (e.g. button_a vs Button_A, display.scroll vs display.Scroll).
+- Missing punctuation: missing colon after if/while/def, missing parentheses, wrong indentation.
+- A wrong pin or API name — point to the closest doc page if you're not sure of the exact one.
+
+For these, just tell them what's wrong and where. They can fix it themselves once they see it.
+
+**Solving — make THEM do the work:**
+- "How do I make the LEDs do X?" / "How do I use the accelerometer to detect a shake?" / "How do I make the radio send a message?" — these are design questions, not bug questions. Ask a clarifying question first (what have they tried? what do they think the first step is?), then teach the concept and have them try it themselves.
+- "Can you write this program for me?" — politely refuse and explain why ("that's the part you're learning!"), then give a short plan (3-5 steps) and, if it helps, a tiny non-solution example (3-5 lines, with a TODO) that illustrates one piece without solving the whole thing.
+- "Make my project work" — break it into the smallest first step ("Let's start with just reading button_a. What should happen when it's pressed?") and only help with that one step.
+
+When refusing a full-solution request, keep this shape: a one-sentence refusal, a one-sentence reason tied to learning, a short numbered plan, and (if helpful) a tiny example with a TODO — never the finished code.`;
 
   const exitPhrases = ["thanks", "thank you", "bye", "done", "exit", "quit", "stop", "no thanks", "i'm good", "im good", "that's all", "thats all"];
 
   // Collect .py files from workspace (supplement to context.files)
   async function collectPythonFiles() {
     let out = "";
+    const totalBudget = 40000;
     if (!codioIDE.workspace || !codioIDE.workspace.getFileTree) return out;
 
     try {
@@ -59,9 +79,11 @@ What you CANNOT do:
       const files = findRelevantFiles(tree);
 
       for (const filePath of files) {
+        if (out.length >= totalBudget) break;
+
         try {
           const content = await codioIDE.workspace.readFile(filePath);
-          const maxLen = 15000;
+          const maxLen = Math.min(15000, totalBudget - out.length);
 
           if (content.length <= maxLen) {
             out += `\nFile: ${filePath}\n${content}\n`;
@@ -134,6 +156,10 @@ What you CANNOT do:
       ? context.guidesPage.content
       : "No guide available.";
 
+    const assignmentName = (context.assignmentData && context.assignmentData.name)
+      ? context.assignmentData.name
+      : null;
+
     const initialUserPrompt = `Here are the student's files:
 <files>
 ${filesContent}
@@ -142,12 +168,13 @@ Here is the assignment guide:
 <guide>
 ${guideContent}
 </guide>
-
+${assignmentName ? `\nAssignment: ${assignmentName}\n` : ''}
 The student says: ${initialInput}`;
 
     messages.push({ "role": "user", "content": initialUserPrompt });
 
     try {
+      codioIDE.coachBot.showThinkingAnimation();
       const result = await codioIDE.coachBot.ask({
         systemPrompt: systemPrompt,
         messages: messages
@@ -156,6 +183,8 @@ The student says: ${initialInput}`;
     } catch (e) {
       codioIDE.coachBot.write("Hmm, something went wrong on my end. Try asking that again!");
       messages.pop();
+    } finally {
+      codioIDE.coachBot.hideThinkingAnimation();
     }
 
     while (true) {
@@ -174,6 +203,7 @@ The student says: ${initialInput}`;
       messages.push({ "role": "user", "content": input });
 
       try {
+        codioIDE.coachBot.showThinkingAnimation();
         const result = await codioIDE.coachBot.ask({
           systemPrompt: systemPrompt,
           messages: messages
@@ -183,6 +213,8 @@ The student says: ${initialInput}`;
         codioIDE.coachBot.write("Hmm, something went wrong on my end. Try asking that again!");
         messages.pop();
         continue;
+      } finally {
+        codioIDE.coachBot.hideThinkingAnimation();
       }
 
       // Keep first message (with files + guide) + last 8 messages (4 exchanges)
