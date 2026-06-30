@@ -99,14 +99,20 @@ What you CANNOT do:
   }
 
   // Register the button in Codio
-  codioIDE.coachBot.register("microbitHelp", "I have a micro:bit question", onPress);
+  codioIDE.coachBot.register("microbitHelp", "Microbit Coach", onPress);
 
   async function onPress() {
     let messages = [];
 
     const context = await codioIDE.coachBot.getContext();
 
-    const initialInput = await codioIDE.coachBot.input("What can I help you with?");
+    let initialInput;
+    try {
+      initialInput = await codioIDE.coachBot.input("What can I help you with?");
+    } catch (e) {
+      codioIDE.coachBot.showMenu();
+      return;
+    }
 
     // Build file context from context.files + workspace .py files
     let filesContent = "";
@@ -141,32 +147,47 @@ The student says: ${initialInput}`;
 
     messages.push({ "role": "user", "content": initialUserPrompt });
 
-    let result = await codioIDE.coachBot.ask({
-      systemPrompt: systemPrompt,
-      messages: messages
-    }, { preventMenu: true });
-
-    messages.push({ "role": "assistant", "content": result.result });
+    try {
+      const result = await codioIDE.coachBot.ask({
+        systemPrompt: systemPrompt,
+        messages: messages
+      }, { preventMenu: true });
+      messages.push({ "role": "assistant", "content": result.result });
+    } catch (e) {
+      codioIDE.coachBot.write("Hmm, something went wrong on my end. Try asking that again!");
+      messages.pop();
+    }
 
     while (true) {
-      const input = await codioIDE.coachBot.input("What else can I help you with?");
+      let input;
+      try {
+        input = await codioIDE.coachBot.input("What else can I help you with? (Say 'thanks' when you're done!)");
+      } catch (e) {
+        break;
+      }
 
-      if (exitPhrases.some(phrase => input.toLowerCase().includes(phrase))) {
+      const trimmedInput = input.trim().toLowerCase();
+      if (exitPhrases.includes(trimmedInput)) {
         break;
       }
 
       messages.push({ "role": "user", "content": input });
 
-      result = await codioIDE.coachBot.ask({
-        systemPrompt: systemPrompt,
-        messages: messages
-      }, { preventMenu: true });
-
-      messages.push({ "role": "assistant", "content": result.result });
+      try {
+        const result = await codioIDE.coachBot.ask({
+          systemPrompt: systemPrompt,
+          messages: messages
+        }, { preventMenu: true });
+        messages.push({ "role": "assistant", "content": result.result });
+      } catch (e) {
+        codioIDE.coachBot.write("Hmm, something went wrong on my end. Try asking that again!");
+        messages.pop();
+        continue;
+      }
 
       // Keep first message (with files + guide) + last 8 messages (4 exchanges)
-      if (messages.length > 9) {
-        messages = [messages[0], ...messages.slice(-8)];
+      while (messages.length > 9) {
+        messages.splice(1, 2); // drop the oldest assistant+user pair, keep messages[0] (context) intact
       }
     }
 
