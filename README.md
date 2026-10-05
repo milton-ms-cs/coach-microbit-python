@@ -1,15 +1,30 @@
-# coach-microbit-python
+# micro:bit Coach
 
-Codio Custom Assistant ("Microbit Coach") for middle school students learning BBC micro:bit MicroPython at Milton Academy.
+A Codio Custom Assistant (Virtual Coach) for middle school students learning MicroPython on the [BBC micro:bit](https://microbit.org/).
 
-A single `index.js` + `metadata.json`, no build step. On every question it reads the student's open editor files plus all project `.py` files (via `codioIDE.files`), the assignment guide, and answers grounded in the official MicroPython v2 docs — without writing full solutions. The system prompt includes a "diagnosing vs. solving" Socratic section: direct help for errors and typos, guided questions for design problems, and a refusal + plan + tiny-example template for "write it for me" requests (snippets capped at ~5 lines).
+## What it does
 
-The old `prompts/`, `policies/`, and `examples/` markdown files were never wired into the runtime and now live in `coaches/deprecated/coach-microbit-python-unwired-prompts/` for reference — everything active is inside `index.js`.
+- Reads the student's open files, every `.py` file in the project and the current guide page before every answer.
+- Bases its answers on the official MicroPython v2 documentation.
+- Gives direct help with errors and typos and guided questions for design problems. For "write it for me" requests it turns the request down, offers a short plan and gives a tiny example (5 lines at most). It never writes a full solution.
+- Tells students how to test in Codio: the **🖥 micro:bit simulator** preview, or the guide's **Send to micro:bit** link for a real board.
+
+One `index.js` plus `metadata.json`, with no build step and no dependencies.
+
+## Using it in Codio
+
+1. In Codio, go to **Organization > Extensions**, click **Add extension**, and paste this repository's URL. You need to be an organization owner.
+2. Choose the coach in the [Virtual Coach settings](https://docs.codio.com/instructors/setupcourses/assignment-settings/virtual-coach.html) for a course or assignment.
+3. After a new release, click **Check for Updates** on the Extensions page. Students can type `version` in the coach to see which version is running.
+
+Every change to `index.js` or `metadata.json` needs a new GitHub release, with a tag that matches the `VERSION` constant in `index.js`.
+
+## Session log
+
+Each coach session adds a short summary to a hidden `.coach-log.json` file in the student's workspace: when it started and ended, the coach version, how many questions were asked, and the questions themselves (up to 50, each cut to 300 characters). Codio's own coach-log export leaves the student's question blank for message-based coaches like this one, so this file is the only record of what students asked. It's never sent to the model, and logging can't break the coach.
 
 ## Development
 
 ```bash
 node --check index.js
 ```
-
-See the parent `coaches/CLAUDE.md` for the shared coach architecture and API quirks. Deployment: bump `VERSION` in `index.js`, commit, then run `../publish_coaches.sh --publish` from the parent folder and Check for Updates in Codio. Typing `version` at any coach prompt confirms the release propagated.
